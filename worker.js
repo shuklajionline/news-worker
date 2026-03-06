@@ -39,10 +39,10 @@ export default {
         };
         items.push({
           title:       g('title'),
-          description: g('description').substring(0, 200),
+          description: g('description').replace(/&lt;[^&]*&gt;/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\u0000-\u001F/g,'').substring(0, 200),
           link:        g('link') || g('guid'),
           pubDate:     g('pubDate'),
-          source_name: feedTitle,
+          source_name: feedTitle.replace(/,.*$/,'').trim(),
           image_url:   (b.match(/url="([^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/) || [])[1] || null,
         });
         if (items.length >= 12) break;
