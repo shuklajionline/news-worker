@@ -7,24 +7,52 @@ const FEEDS = {
   science:   'https://www.thehindu.com/sci-tech/science/feeder/default.rss',
 };
 
-export default {
-  async fetch(request) {
-    const cors = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET,OPTIONS',
-    };
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
 
+export default {
+  async fetch(request, env) {
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: cors });
+      return new Response(null, { headers: CORS });
     }
 
-    const cat = new URL(request.url).searchParams.get('cat') || 'top';
+    const url = new URL(request.url);
+
+    // /ai  →  proxy to Anthropic API
+    if (url.pathname === '/ai') {
+      try {
+        const body = await request.json();
+        const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await apiRes.json();
+        return new Response(JSON.stringify(data), {
+          status: apiRes.status,
+          headers: { ...CORS, 'Content-Type': 'application/json' },
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: { message: err.message } }), {
+          status: 500,
+          headers: { ...CORS, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // /  →  news RSS proxy
+    const cat = url.searchParams.get('cat') || 'top';
     const feedUrl = FEEDS[cat] || FEEDS.top;
 
     try {
-      const res = await fetch(feedUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
+      const res = await fetch(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
       if (!res.ok) throw new Error('Feed error ' + res.status);
       const xml = await res.text();
 
@@ -39,7 +67,7 @@ export default {
         };
         items.push({
           title:       g('title'),
-          description: g('description').replace(/&lt;[^&]*&gt;/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\u0000-\u001F/g,'').substring(0, 200),
+          description: g('description').replace(/&lt;[^&]*&gt;/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').substring(0,200),
           link:        g('link') || g('guid'),
           pubDate:     g('pubDate'),
           source_name: feedTitle.replace(/,.*$/,'').trim(),
@@ -49,12 +77,12 @@ export default {
       }
 
       return new Response(JSON.stringify({ status: 'ok', category: cat, items }), {
-        headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' }
+        headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' }
       });
 
     } catch (err) {
       return new Response(JSON.stringify({ status: 'error', message: err.message }), {
-        status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
+        status: 500, headers: { ...CORS, 'Content-Type': 'application/json' }
       });
     }
   }
